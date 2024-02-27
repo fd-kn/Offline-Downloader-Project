@@ -5,9 +5,10 @@ const puppeteer = require('puppeteer');
 const mongoose = require('mongoose');
 const Webpage = require('./webpage');
 const path = require('path')
+require('dotenv').config();
 
 
-const dbURI = 'mongodb+srv://fd-kn:mongopass123@offline-downloader.fxxvtpy.mongodb.net/offline-webpages?retryWrites=true&w=majority';
+const dbURI = `mongodb+srv://${process.env.MONGODB_USERNAME}:${process.env.MONGODB_PASSWORD}@offline-downloader.fxxvtpy.mongodb.net/offline-webpages?retryWrites=true&w=majority`;
 mongoose.connect(dbURI)
     .then((result) => app.listen(3001, () => {
         console.log("running on port 3001")}))
