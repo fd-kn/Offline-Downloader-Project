@@ -1,4 +1,5 @@
-const cacheName = 'v2';
+const cacheName = 'MainPages';
+const cacheWebpages = 'WebPages'
 
 const cacheAssets = [
     '/index.js',
@@ -14,11 +15,12 @@ self.addEventListener('install', async e => {
 
     try {
         const cache = await caches.open(cacheName);
-        console.log('Service Worker: Caching Files');
+        console.log('Caching Main Pages...');
         await cache.addAll(cacheAssets);
-        console.log('Service Worker: Files Cached Successfully');
+
+        console.log('Main Pages Cached Successfully');
     } catch (error) {
-        console.error('Service Worker: Cache Installation Error', error);
+        console.error('Main Pages Installation Error', error);
     }
     
     self.skipWaiting();
@@ -32,7 +34,7 @@ self.addEventListener('activate', e => {
             return Promise.all(
                 cacheNames.map(cache => {
                     if (cache !== cacheName) {
-                        console.log('Service Worker: Clearing Old Cache');
+                        console.log('Clearing Old Cache');
                         return caches.delete(cache);
                     }
                 })
@@ -41,39 +43,51 @@ self.addEventListener('activate', e => {
     );
 });
 
-self.addEventListener('fetch', async event => {
-    console.log('Service Worker: Fetching');
-    event.respondWith(
-        // Try fetching the requested resource from the network
-        fetch(event.request)
-            .then(async response => {
-                // If the fetch is successful, clone the response
-                const responseClone = response.clone();
-                // Open the cache
-                const cache = await caches.open(cacheName);
-                // Put the fetched response in the cache
-                await cache.put(event.request, responseClone);
-                // Return the fetched response
-                return response;
 
-            })
-            .catch(async error => {
-                // If fetch fails (e.g., due to network error), try serving from cache
-                console.error('Service Worker: Fetch failed - no wifi; serving from cache', error);
-                try {
-                    const cachedResponse = await caches.match(event.request);
-                    // If the cached response is found, return it
-                    if (cachedResponse) {
-                        console.log('it works here')
-                        return cachedResponse;
-                    }
-                    // If the requested resource is not found in cache, return a generic offline response
-                    return new Response('Not found in cache. Please check your internet connection.');
-                } catch (error) {
-                    // If an error occurs while serving from cache, return a generic offline response
-                    console.error('Service Worker: Cache match failed', error);
-                    return new Response('Offline mode. Please check your internet connection.');
-                }
-            })
-    );
+
+self.addEventListener('message', event => {
+    // Check if the message is coming from a valid source
+    if (event.source && event.source.id) {
+        // Handle messages based on their type
+        switch (event.data.type) {
+            case 'newData':
+                // Handle the 'newData' message
+                const webpageData = event.data.payload;
+                console.log('New data received:', webpageData);
+
+
+                // Store the data in cacheWebpages
+                webpageData.forEach(webpage => {
+                    const cacheKey = webpage.title;
+                    console.log('cache key:', cacheKey);
+                    caches.open(cacheWebpages).then(cache => {
+                        cache.put(cacheKey, new Response(JSON.stringify(webpage)));
+                        console.log('Data stored in cacheWebpages');
+                        console.log(webpage.url);
+
+                        cache.match(cacheKey).then(cachedResponse => {
+                            if (cachedResponse) {
+                                return cachedResponse.json().then(webpageData => {
+                                    console.log('Webpage data retrieved from cache:', webpageData);
+                                });
+                            } else {
+                                console.log('No matching cached response found.');
+                            }
+                        }).catch(error => {
+                            console.error('Error matching cache:', error);
+                        });
+                    }).catch(error => {
+                        console.error('Error storing data in cacheWebpages:', error);
+                    });
+
+                });
+
+                break;
+
+        }
+    }
 });
+
+
+
+

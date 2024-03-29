@@ -21,21 +21,67 @@
         <button type="submit" class="btn btn-primary">Submit</button>
     </form>
 
-    <ul>
-        <% if (allWebpages && allWebpages.length) { %>
-            <% allWebpages.forEach(webpage => { %>
-                <li><a href="/webpage/<%= webpage.title %>"><%= webpage.title %></a></li>
-            <% }) %>
-        <% } else { %>
-            <li>No webpages found</li>
-        <% } %>
-    </ul>
+
+
+    <ul id="webpageList"></ul>
+    <p> THIS IS THE WEBPAGE</p>
+    <div id="contentArea"></div>
+
 
 
     <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/popper.js@1.14.7/dist/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
     <script src="/main.js"></script>
+    <script>
+
+const cacheName = 'WebPages';
+
+caches.open(cacheName).then(cache => {
+    cache.keys().then(keys => {
+        keys.forEach(key => {
+            cache.match(key).then(cachedResponse => {
+                if (cachedResponse) {
+                    cachedResponse.json().then(webpageData => {
+                        console.log('From the cache EJS:', webpageData);
+                        displayWebpageData(webpageData); // Call function to display webpage data
+                    }).catch(error => {
+                        console.error('Error parsing cached response EJS:', error);
+                    });
+                } else {
+                    console.log('No matching cached response found for key EJS:', key);
+                }
+            }).catch(error => {
+                console.error('Error matching cache EJS:', error);
+            });
+        });
+    }).catch(error => {
+        console.error('Error retrieving cache keys EJS:', error);
+    });
+}).catch(error => {
+    console.error('Error opening cache EJS:', error);
+});
+
+function displayWebpageData(webpageData) {
+    const ul = document.getElementById('webpageList');
+    console.log('from the function: ', webpageData)
+        const li = document.createElement('li');
+        const a = document.createElement('a');
+        a.textContent = webpageData.title;
+        // Attach click event listener to each title link
+        a.addEventListener('click', function(event) {
+            event.preventDefault(); // Prevent default link behavior
+            const contentArea = document.getElementById('contentArea');
+            contentArea.innerHTML = webpageData.htmlContent; // Update content area with HTML content
+        });
+        li.appendChild(a);
+        ul.appendChild(li);
+    ;
+}
+
+    </script>
+
+    
 
 </body>
 </html>

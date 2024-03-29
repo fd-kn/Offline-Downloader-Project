@@ -6,13 +6,24 @@
     const Webpage = require('./webpage');
     const path = require('path')
     require('dotenv').config();
+    const http = require('http');
+    const socketIo = require('socket.io');
+    const server = http.createServer(app);
+    const io = socketIo(server);
 
 
     const dbURI = `mongodb+srv://${process.env.MONGODB_USERNAME}:${process.env.MONGODB_PASSWORD}@offline-downloader.fxxvtpy.mongodb.net/offline-webpages?retryWrites=true&w=majority`;
-    mongoose.connect(dbURI)
-        .then((result) => app.listen(process.env.PORT || 3001, () => {
-            console.log(`running on port 3001 or not`)}))
-        .catch((err) => console.log(err));
+    
+    async function connectToMongoDB() {
+        try {
+            await mongoose.connect(dbURI);
+            console.log('Connected to MongoDB');
+        } catch (error) {
+            console.error('Error connecting to MongoDB:', error);
+        }
+    }
+    
+
 
     let browserInstance; // Global variable to store the Puppeteer browser instance
 
@@ -24,23 +35,13 @@
         return browserInstance;
     }
 
+
     app.use(express.static('public'));
     app.use(bodyParser.urlencoded({ extended: true }));
 
     app.set('view engine', 'ejs');
 
-    app.get("/", async (req, res) => {
-        try {
-            // Fetch all webpages from the database
-            const allWebpages = await Webpage.find({});
-            // Render the home page and pass the webpage titles with URLs
-            res.render('home', { allWebpages });
-        } catch (error) {
-            console.error('Error retrieving webpages:', error);
-            res.status(500).render('error', { errorMessage: 'Error retrieving webpages' }); 
-        }
-    });
-
+//! SERVING FILES
 
     app.get('/main.js', (req, res) => {
         res.setHeader('Content-Type', 'application/javascript'); // Set the correct MIME type
@@ -75,52 +76,91 @@
     });
 
 
+
+
+//! ROUTES
+    
+    app.get("/", async (req, res) => {
+        try {
+            await connectToMongoDB();  
+            //! ADD TIME BEFORE LEAVING IT
+            // Fetch all webpages from the database
+            const allWebpages = await Webpage.find({});
+            // Render the home page and pass the webpage titles with URLs
+            res.render('home', { allWebpages });
+        } catch (error) {
+            console.error('Error retrieving webpages:', error);
+            const allWebpages = ['hello','hi','hey']
+            res.render('home', { allWebpages });
+         // res.status(500).render('error', { errorMessage: 'Error retrieving webpages' }); 
+            
+        }
+    });
+
+
     app.post("/submit", async (req, res) => {
         const webpageLink = req.body.webpageLink;
         console.log('Submitted webpage link:', webpageLink);
         console.log(req.body);
-
+        //* Check is webpagelink is actually a link or empty then send popup?
+        //* Save incoming webpages to cache (assign ids?)
+        if(webpageLink === ''){ 
+            res.redirect('/'); 
+        } else {
         try {
-            // Get the Puppeteer browser instance
-            const browser = await getBrowserInstance();
-            const page = await browser.newPage();
-            await page.setJavaScriptEnabled(true);
-
-            // Navigate to the specified webpage
-            await page.goto(webpageLink, { waitUntil: 'domcontentloaded' }); // Wait for DOM content to be loaded
-
-            // Extract HTML content from the webpage using Puppeteer
-            const htmlContent = await page.content();
-            console.log('Webpage content without JavaScript:', htmlContent);
-
-            const title = await page.title();
-
-
-            const newWebpage = new Webpage({
-                url: webpageLink,
-                htmlContent: htmlContent,
-                title: title
-            });
-            
-            newWebpage.save()
-                .then(savedWebpage => {
-                    console.log('Webpage saved successfully:', savedWebpage);
-                })
-                .catch(error => {
-                    console.error('Error saving webpage:', error);
+            // Check if a document with the same URL already exists in the database
+            const existingWebpage = await Webpage.findOne({ url: webpageLink });
+            if (existingWebpage) {
+                //* Popup ?
+                console.log('Webpage with URL already exists');
+                res.redirect('/')
+            } else {
+                // Document with the URL does not exist, save the new document
+                // Get the Puppeteer browser instance
+                const browser = await getBrowserInstance();
+                const page = await browser.newPage();
+                await page.setJavaScriptEnabled(true);
+    
+                // Navigate to the specified webpage
+                await page.goto(webpageLink, { waitUntil: 'domcontentloaded' }); // Wait for DOM content to be loaded
+    
+                // Extract HTML content from the webpage using Puppeteer
+                const htmlContent = await page.content();
+    
+                const title = await page.title();
+    
+                const newWebpage = new Webpage({
+                    url: webpageLink,
+                    htmlContent: htmlContent,
+                    title: title
                 });
 
+                
+                newWebpage.save()
+                    .then(savedWebpage => {
+                        console.log('Webpage saved successfully');
+                        return Webpage.find({});
 
-            res.send(newWebpage.htmlContent);
+                    })
+                    .then(allWebpages => {
+                        // Render the home page with all webpages, including the newly saved one
+                        res.render('home', { allWebpages });
+                    })
+                    .catch(error => {
+                        console.error('Error saving webpage:', error);
+                        res.status(500).render('error', { errorMessage: 'Error saving webpage' });
+                    });
+    
+                // Close the page
+                await page.close();                            
+    }
 
-            // Close the page
-            await page.close();
         } catch (error) {
             console.error('Error during web scraping:', error);
             res.render('error', { errorMessage: 'Error during web scraping' }); 
-        }
+        }}
     });
-
+    
 
     app.get("/webpage/:title", async (req, res) => {
         const title = req.params.title;
@@ -140,6 +180,49 @@
     });
 
 
+    app.post("/cachedWebpages", (req, res) => {
+        const allWebpages = req.body;
+        console.log(allWebpages)
+         // Assuming the cached webpage data is sent as JSON
+        // Render the home page and pass the cached webpage data to it
+        // res.render('home', { allWebpages });
+    });
+
+
+    app.post("/delete-webpage", async (req, res) => {
+        const title = req.body.title;
+        try {
+            // Find the webpage by title and delete it
+            const deletedWebpage = await Webpage.findOneAndDelete({ title: title });
+            if (deletedWebpage) {
+                console.log('Webpage deleted successfully:', deletedWebpage);
+                // Redirect back to the home page after deletion
+                res.redirect('/');
+            } else {
+                console.log('Webpage not found');
+                // Redirect back to the home page if the webpage is not found
+                res.redirect('/');
+            }
+        } catch (error) {
+            console.error('Error deleting webpage:', error);
+            res.status(500).render('error', { errorMessage: 'Error deleting webpage' });
+        }
+    });
+
+
+    app.get("/allwebpages", async (req, res) => {
+        try {
+            // Fetch all webpages from the MongoDB collection
+            const allWebpages = await Webpage.find({});
+            res.json(allWebpages); // Send the fetched webpages as a JSON response
+        } catch (error) {
+            console.error('Error fetching webpages:', error);
+            res.status(500).json({ error: 'Error fetching webpages' }); // Send an error response if there's any issue
+        }
+    });
+
+
+
 
     app.use((err, req, res, next) => {
             console.error(err.stack);
@@ -147,3 +230,5 @@
         })
 
 
+    app.listen(process.env.PORT || 3001, () => {
+        console.log(`running on port 3001 or not`)})
