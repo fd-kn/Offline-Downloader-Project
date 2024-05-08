@@ -6,26 +6,72 @@
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
 
-
     <title>Home</title>
 </head>
-<body>
-    <h1 class="text-center text-info ">Offline Webpage Downloader</h1>
 
-    <form action="/submit" method="POST" class="text-center">
-        <div class="form-group" >
-          <label for="exampleInputEmail1">Webpage Link</label>
-          <input type="text" name="webpageLink" class="input-bar form-control" id="exampleLink" aria-describedby="linkHelp" placeholder="Enter webpage link">
+<body class="bg-light">
+
+
+
+    <h1 class="text-center text-info bg-dark" id="title" style="margin-bottom: 20px;">Offline Webpage Downloader</h1>
+
+    <% if (allWebpages === '') { %>
+
+        <div class="text-center" id="statustitle">
+            <h4>You are currently in Offline Mode.<h4>
+            <h6 class="text-danger"><i>(This may be due to network issues or slow loading times.)</i></h6>
         </div>
-   
-        <button type="submit" class="btn btn-primary">Submit</button>
-    </form>
 
+    <% } %>
+    
+        <% if (allWebpages !== '') { %>
+            <form action="/submit" method="POST" class="text-center">
+                <div class="form-group" >
+                  <label for="exampleInputEmail1"><h4>You are currently in Online Mode.</h4></label>
+                  <input type="text" name="webpageLink" class="input-bar form-control" id="exampleLink" aria-describedby="linkHelp" placeholder="Enter webpage link">
+                </div>
+                <button type="submit" class="btn btn-primary">Submit</button>
+            </form>
+            <br>
+            <div class="listTitle">
+                <h5>Your Saved Webpages:</h5>
+            </div>
+        <ul style="list-style: none; ">
+            <% allWebpages.forEach(webpage => { %>
+                <li style="display: flex; align-items: center;">
+                    <p style="margin-right: 10px;"><%= webpage.title %></p>
 
+                    <div style="transform: translateY(-8px);">
+                        <button class="btn btn-info btn-sm"><a href="/webpage/<%= webpage.title %>" 
+                            style="color: white;">
+                            View
+                        </a></button>
+                    </div>
 
-    <ul id="webpageList"></ul>
-    <p> THIS IS THE WEBPAGE</p>
-    <div id="contentArea"></div>
+                    <form action="/delete-webpage" method="POST" style="margin-left: 10px; transform: translateY(-8px);">
+                        <input type="hidden" name="title" value="<%= webpage.title %>">
+                        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                    </form>
+                </li>
+            <% }) %>
+
+            
+
+            <!-- OFFLINE MODE -->
+
+        <% } else { %>
+            <div class="listTitle" id="listWarning">
+                <h5>Your Saved Webpages:</h5>
+                <p class="text-warning"><i>(When viewing a webpage, please reload the page to return to the home page to avoid any potential errors.)</i></p>
+            </div>
+            <div id="listContainer">
+                <ul id="webpageList" style="list-style: none; margin-bottom: 20px; font-style: italic;"></ul>
+            </div>
+            <div id="contentArea" class="hidden"></div>
+
+        <% } %>
+    </ul>
+
 
 
 
@@ -33,53 +79,87 @@
     <script src="https://cdn.jsdelivr.net/npm/popper.js@1.14.7/dist/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
     <script src="/main.js"></script>
+    
+
     <script>
-
-const cacheName = 'WebPages';
-
-caches.open(cacheName).then(cache => {
-    cache.keys().then(keys => {
-        keys.forEach(key => {
-            cache.match(key).then(cachedResponse => {
-                if (cachedResponse) {
-                    cachedResponse.json().then(webpageData => {
-                        console.log('From the cache EJS:', webpageData);
-                        displayWebpageData(webpageData); // Call function to display webpage data
-                    }).catch(error => {
-                        console.error('Error parsing cached response EJS:', error);
+        document.addEventListener('DOMContentLoaded', function() {
+            if (!navigator.onLine) {
+                console.log('You are offline.');
+            } else {
+                console.log('You are online.');
+            }
+    
+            const cacheName = 'WebPages';
+    
+            caches.open(cacheName).then(cache => {
+                cache.keys().then(keys => {
+                    keys.forEach(key => {
+                        cache.match(key).then(cachedResponse => {
+                            if (cachedResponse) {
+                                cachedResponse.json().then(webpageData => {
+                                    console.log('From the cache EJS:', webpageData);
+                                    displayWebpageData(webpageData); 
+                                }).catch(error => {
+                                    console.error('Error parsing cached response EJS:', error);
+                                });
+                            } else {
+                                console.log('No matching cached response found for key EJS:', key);
+                            }
+                        }).catch(error => {
+                            console.error('Error matching cache EJS:', error);
+                        });
                     });
-                } else {
-                    console.log('No matching cached response found for key EJS:', key);
-                }
+                }).catch(error => {
+                    console.error('Error retrieving cache keys EJS:', error);
+                });
             }).catch(error => {
-                console.error('Error matching cache EJS:', error);
+                console.error('Error opening cache EJS:', error);
             });
-        });
-    }).catch(error => {
-        console.error('Error retrieving cache keys EJS:', error);
-    });
-}).catch(error => {
-    console.error('Error opening cache EJS:', error);
-});
+    
+            function displayWebpageData(webpageData) {
+                const ul = document.getElementById('webpageList');
+                const contentArea = document.getElementById('contentArea');
+                const listContainer = document.getElementById('listContainer');
+                const title = document.getElementById('title');
+                const statustitle = document.getElementById('statustitle');
+                const listWarning = document.getElementById('listWarning')
+    
+                const li = document.createElement('li');
+                li.style.marginBottom = '10px';
+                const a = document.createElement('a');
+                const btn = document.createElement('button');
+                btn.style.marginLeft = '5px';
+                const span = document.createElement('span');
+    
+                a.textContent = webpageData.title;
+                btn.textContent = 'View';
+                btn.classList.add('btn', 'btn-info', 'btn-sm'); 
+                statustitle.style.marginBottom = '50px';
 
-function displayWebpageData(webpageData) {
-    const ul = document.getElementById('webpageList');
-    console.log('from the function: ', webpageData)
-        const li = document.createElement('li');
-        const a = document.createElement('a');
-        a.textContent = webpageData.title;
-        // Attach click event listener to each title link
-        a.addEventListener('click', function(event) {
-            event.preventDefault(); // Prevent default link behavior
-            const contentArea = document.getElementById('contentArea');
-            contentArea.innerHTML = webpageData.htmlContent; // Update content area with HTML content
-        });
-        li.appendChild(a);
-        ul.appendChild(li);
-    ;
-}
 
+    
+                btn.addEventListener('click', function(event) {
+                    event.preventDefault(); 
+                    contentArea.innerHTML = webpageData.htmlContent; 
+    
+                    listContainer.classList.add('hidden');
+                    title.classList.add('hidden');
+                    statustitle.classList.add('hidden');
+                    listWarning.classList.add('hidden');
+
+                    contentArea.classList.remove('hidden');
+                });
+    
+                span.appendChild(btn); 
+                li.appendChild(a);
+                li.appendChild(span); 
+                ul.appendChild(li);
+            }
+
+    
+        });
     </script>
+    
 
     
 

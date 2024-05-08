@@ -1,11 +1,23 @@
-body{
-    padding: 5px;
-} 
 
 
 .input-bar{
     max-width: 50% ;
     margin: auto;
 }
+
+.hidden {
+    display: none;
+}
+
+#title {
+    border-bottom: solid rgb(42, 133, 158) 5px;
+    padding: 10px;
+}
+
+.listTitle {
+    margin: 30px;
+}
+
+
 
   

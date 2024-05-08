@@ -6,28 +6,50 @@
     const Webpage = require('./webpage');
     const path = require('path')
     require('dotenv').config();
-    const http = require('http');
-    const socketIo = require('socket.io');
-    const server = http.createServer(app);
-    const io = socketIo(server);
 
 
-    const dbURI = `mongodb+srv://${process.env.MONGODB_USERNAME}:${process.env.MONGODB_PASSWORD}@offline-downloader.fxxvtpy.mongodb.net/offline-webpages?retryWrites=true&w=majority`;
+    const dbURI = `mongodb+srv://${process.env.MONGODB_USERNAME}:${process.env.MONGODB_PASSWORD}@offline-downloader.fxxvtpy.mongodb.net/`
+    app.use(express.static('public'));
+    app.use(bodyParser.urlencoded({ extended: true }));
+    app.set('view engine', 'ejs');
+
+    //! SERVING FILES
+
+    app.get('/main.js', (req, res) => {
+        res.setHeader('Content-Type', 'application/javascript'); 
+        res.sendFile(path.join(__dirname, 'main.js')); 
+    });
+
+    app.get('/index.js', (req, res) => {
+        res.setHeader('Content-Type', 'application/javascript');
+        res.sendFile(path.join(__dirname, 'index.js'));
+    });
+
+    app.get('/cached_pages.js', (req, res) => {
+        res.setHeader('Content-Type', 'application/javascript'); 
+        res.sendFile(path.join(__dirname, 'cached_pages.js')); 
+    });
+
+    app.get('/public/styles.css', (req, res) => {
+        res.setHeader('Content-Type', 'text/css'); 
+        res.sendFile(path.join(__dirname, 'public', 'styles.css')); 
+    });
+
+    app.get('/views/home.ejs', (req, res) => {
+        res.setHeader('Content-Type', 'text/html'); 
+        res.sendFile(path.join(__dirname, 'views', 'home.ejs')); 
+    });
+
+    app.get('/views/error.ejs', (req, res) => {
+        res.setHeader('Content-Type', 'text/html'); 
+        res.sendFile(path.join(__dirname, 'views', 'error.ejs')); 
+    });
+
+
+
+    let browserInstance; 
     
-    async function connectToMongoDB() {
-        try {
-            await mongoose.connect(dbURI);
-            console.log('Connected to MongoDB');
-        } catch (error) {
-            console.error('Error connecting to MongoDB:', error);
-        }
-    }
     
-
-
-    let browserInstance; // Global variable to store the Puppeteer browser instance
-
-
     async function getBrowserInstance() {
         if (!browserInstance) {
             browserInstance = await puppeteer.launch();
@@ -36,44 +58,52 @@
     }
 
 
-    app.use(express.static('public'));
-    app.use(bodyParser.urlencoded({ extended: true }));
 
-    app.set('view engine', 'ejs');
+    //! Connecting to MongoDB
+    async function connectToMongoDB() {
+        try {
+            await mongoose.connect(dbURI, { connectTimeoutMS: 3000 }); 
+            console.log('Connected to MongoDB');
+            return true; 
+        } catch (error) {
+            console.error('Error connecting to MongoDB from connectToMongoDB():', error);
+            return false; 
+        }
+    }
+    
+//! Hourly check for updates
 
-//! SERVING FILES
+const cron = require('node-cron');
 
-    app.get('/main.js', (req, res) => {
-        res.setHeader('Content-Type', 'application/javascript'); // Set the correct MIME type
-        res.sendFile(path.join(__dirname, 'main.js')); // Serve the main.js file from the root directory
-    });
+cron.schedule('0 * * * *', async () => {
 
-    app.get('/index.js', (req, res) => {
-        // Set the correct MIME type
-        res.setHeader('Content-Type', 'application/javascript');
-        // Serve the index.js file from the root directory
-        res.sendFile(path.join(__dirname, 'index.js'));
-    });
+    try {
+        const allWebpages = await Webpage.find({});
 
-    app.get('/cached_pages.js', (req, res) => {
-        res.setHeader('Content-Type', 'application/javascript'); // Set the correct MIME type
-        res.sendFile(path.join(__dirname, 'cached_pages.js')); // Serve the main.js file from the root directory
-    });
-
-    app.get('/public/styles.css', (req, res) => {
-        res.setHeader('Content-Type', 'text/css'); // Set the correct MIME type for CSS
-        res.sendFile(path.join(__dirname, 'public', 'styles.css')); // Serve the CSS file
-    });
-
-    app.get('/views/home.ejs', (req, res) => {
-        res.setHeader('Content-Type', 'text/html'); // Set the Content-Type header
-        res.sendFile(path.join(__dirname, 'views', 'home.ejs')); // 
-    });
-
-    app.get('/views/error.ejs', (req, res) => {
-        res.setHeader('Content-Type', 'text/html'); // Set the Content-Type header
-        res.sendFile(path.join(__dirname, 'views', 'error.ejs')); // Serve the CSS file
-    });
+        for (const webpage of allWebpages) {
+            try {
+                const browser = await puppeteer.launch();
+                const page = await browser.newPage();
+                await page.setJavaScriptEnabled(true);
+    
+                await page.goto(webpage.url, { waitUntil: 'domcontentloaded' });
+    
+                const htmlContent = await page.content();
+    
+                if (webpage.htmlContent !== htmlContent) {
+                    await Webpage.updateOne({ _id: webpage._id }, { htmlContent });
+                    console.log(`HTML content updated for ${webpage.title}`);
+                }
+    
+                await browser.close();
+            } catch (error) {
+                console.error(`Error fetching HTML content for ${webpage.title}:`, error);
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching webpages:', error);
+    }
+});
 
 
 
@@ -81,52 +111,66 @@
 //! ROUTES
     
     app.get("/", async (req, res) => {
-        try {
-            await connectToMongoDB();  
-            //! ADD TIME BEFORE LEAVING IT
-            // Fetch all webpages from the database
-            const allWebpages = await Webpage.find({});
-            // Render the home page and pass the webpage titles with URLs
+
+        const isConnected = await connectToMongoDB();
+    
+        try {        
+            let allWebpages = '';
+            console.log('isConnected: ', isConnected )
+
+            if (isConnected) {
+                const timeoutPromise = new Promise(resolve => {
+                    setTimeout(() => {
+                        resolve(null); 
+                    }, 3000);
+                });
+    
+                const raceResult = await Promise.race([
+                    Webpage.find({}),
+                    timeoutPromise
+                ]);
+
+                if (raceResult) {
+                    allWebpages = raceResult;
+                }
+            } else {
+                allWebpages = '';
+            }
             res.render('home', { allWebpages });
+ 
         } catch (error) {
             console.error('Error retrieving webpages:', error);
-            const allWebpages = ['hello','hi','hey']
-            res.render('home', { allWebpages });
-         // res.status(500).render('error', { errorMessage: 'Error retrieving webpages' }); 
+            const allWebpages = ''
+            res.render('home', {allWebpages});
             
         }
     });
 
 
     app.post("/submit", async (req, res) => {
+
         const webpageLink = req.body.webpageLink;
         console.log('Submitted webpage link:', webpageLink);
-        console.log(req.body);
-        //* Check is webpagelink is actually a link or empty then send popup?
-        //* Save incoming webpages to cache (assign ids?)
-        if(webpageLink === ''){ 
-            res.redirect('/'); 
+        const validUrlRegex = /^(ftp|http|https):\/\/[^ "]+$/;
+
+        if(webpageLink === '' || !validUrlRegex.test(webpageLink)){ 
+            return res.redirect('/'); 
         } else {
         try {
-            // Check if a document with the same URL already exists in the database
             const existingWebpage = await Webpage.findOne({ url: webpageLink });
             if (existingWebpage) {
-                //* Popup ?
                 console.log('Webpage with URL already exists');
-                res.redirect('/')
+                return res.redirect('/');
+
             } else {
-                // Document with the URL does not exist, save the new document
-                // Get the Puppeteer browser instance
                 const browser = await getBrowserInstance();
                 const page = await browser.newPage();
                 await page.setJavaScriptEnabled(true);
-    
-                // Navigate to the specified webpage
+
+                console.log('second check')
+
                 await page.goto(webpageLink, { waitUntil: 'domcontentloaded' }); // Wait for DOM content to be loaded
-    
-                // Extract HTML content from the webpage using Puppeteer
                 const htmlContent = await page.content();
-    
                 const title = await page.title();
     
                 const newWebpage = new Webpage({
@@ -143,21 +187,19 @@
 
                     })
                     .then(allWebpages => {
-                        // Render the home page with all webpages, including the newly saved one
-                        res.render('home', { allWebpages });
+                        res.redirect('/');
                     })
                     .catch(error => {
                         console.error('Error saving webpage:', error);
                         res.status(500).render('error', { errorMessage: 'Error saving webpage' });
                     });
     
-                // Close the page
                 await page.close();                            
     }
 
         } catch (error) {
-            console.error('Error during web scraping:', error);
-            res.render('error', { errorMessage: 'Error during web scraping' }); 
+            console.error('Error during web scraping from the submit route', error);
+            res.redirect('/');
         }}
     });
     
@@ -165,13 +207,10 @@
     app.get("/webpage/:title", async (req, res) => {
         const title = req.params.title;
         try {
-            // Find the webpage with the specified title in the database
             const webpage = await Webpage.findOne({ title: title });
             if (!webpage) {
-                // If the webpage is not found, render an error page
                 return res.status(404).render('error', { errorMessage: 'Webpage not found' });
             }
-            // Render the webpage content to the home page
             res.send(webpage.htmlContent);
         } catch (error) {
             console.error('Error retrieving webpage:', error);
@@ -180,27 +219,17 @@
     });
 
 
-    app.post("/cachedWebpages", (req, res) => {
-        const allWebpages = req.body;
-        console.log(allWebpages)
-         // Assuming the cached webpage data is sent as JSON
-        // Render the home page and pass the cached webpage data to it
-        // res.render('home', { allWebpages });
-    });
 
 
     app.post("/delete-webpage", async (req, res) => {
         const title = req.body.title;
         try {
-            // Find the webpage by title and delete it
             const deletedWebpage = await Webpage.findOneAndDelete({ title: title });
             if (deletedWebpage) {
                 console.log('Webpage deleted successfully:', deletedWebpage);
-                // Redirect back to the home page after deletion
                 res.redirect('/');
             } else {
                 console.log('Webpage not found');
-                // Redirect back to the home page if the webpage is not found
                 res.redirect('/');
             }
         } catch (error) {
@@ -210,18 +239,26 @@
     });
 
 
+
     app.get("/allwebpages", async (req, res) => {
         try {
-            // Fetch all webpages from the MongoDB collection
-            const allWebpages = await Webpage.find({});
-            res.json(allWebpages); // Send the fetched webpages as a JSON response
+            const fetchPromise = Webpage.find({});
+            const timeout = 5000; 
+    
+            const allWebpages = await Promise.race([
+                fetchPromise,
+                new Promise((resolve, reject) => {
+                    setTimeout(() => reject(new Error('Timeout')), timeout);
+                })
+            ]);
+    
+            res.json(allWebpages);
         } catch (error) {
             console.error('Error fetching webpages:', error);
-            res.status(500).json({ error: 'Error fetching webpages' }); // Send an error response if there's any issue
+            res.redirect('/');
         }
     });
-
-
+    
 
 
     app.use((err, req, res, next) => {
@@ -231,4 +268,4 @@
 
 
     app.listen(process.env.PORT || 3001, () => {
-        console.log(`running on port 3001 or not`)})
+        console.log(`running on port 3001`)})
